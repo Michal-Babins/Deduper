@@ -1,0 +1,132 @@
+Psuedocode for PCR deduplication script
+
+
+The problem:
+
+When going through the RNA-sequencing workflow, once you have your adapters ligated to your fragments 
+and have enriched for your RNA of interest, the next step is to amplify your RNA througth PCR. Amplication 
+occurs through denaturization, annealing, and finally extension to make multiple copies of molecular DNA.
+While duplication is a key factor in getting enough representation of your RNA of interest, duplicates can
+lead to over representation of a genomic sequence, alternative allele, or an expressed gene. Since high AT
+regions maybe more greatly represented than GT regions, it is important to normalze your output by deduplicating
+your SAM file after alignment. The PCR duplicates should be present at the same location, should align through
+the same chromosome, and should have the same strandedness. These are three major assumptions to be made
+when removing PCR duplicates to get more proper representation of your data. 
+
+Example SAM file output:
+
+@SQ    SN:chr1    LN:50
+read1    16    chr1    1    255    50M    *    0    0    ATTTAAAAATTAATTTAATGCTTGGCTAAATCTTAATTACATATATAATT 
+<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<    NM:i:0
+read1    1032    chr1    1    255    50M    *    0    0    ATTTAAAAATTAATTTAATGCTTGGCTAAATCTTAATTACATATATAATT
+<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<    NM:i:0
+
+The solution:
+The problem of PCR duplicates will be addressed by taking SAM formatted files and adressing where the reads
+are mapped multiple times as determined by thier Unique Molecular Index (UMI). Where multiple of these UMI's
+are mapped multiple times to the same read, the duplicated reads will be discarded. The UMI's are provided in 
+the STL96.txt file, which contains 96 original UMI's for the RNA-seq library that was prepared. 
+
+Important identifiers:
+-QNAME (where the UMI will be located, column 1 of SAM file)
+-Bitwise Flag (column 2, will help identify strandedness)
+-RNAME (column 3 , chrom)
+-POS (column 4, mapping position)
+-CIGAR (column 6)
+
+Psuedo code:
+
+Open all files at the begining to be able to iterate through them
+
+    -Open STL96.txt file to iterate through UMI's 
+    -Open SAM input provided
+    -Open SAM output/Discarded files
+
+Create multiple dictionaries that will contain the necessary identifiers:
+    Relevant information: UMI from STL96, Chrom, 5' starting position
+    -Create dictionary with UMI's 
+        -Go into STL96 and extract UMI store as [Numbered Index: UMI]
+    -Create dictionary with Bitwise Flags for forward and reverse read
+        -if bitwise is 4 = unmapped [bitwise flag varaible: relavent information]
+        -if bitwise is 16 = reverse complimented strand [bitwise flag variable: relavent information]
+    -Set all dictionaries to be empty
+
+
+Determine if any soft clipping occured: 
+-A Cigar string with soft clipping would start where the read consumes the reference 
+    -ex: 2S12M (where S is soft clipping and M is match)
+
+    def soft_clip_checker(read_cigar, position):
+    ```Parse through the data to find where the seqeunce starts (at the 5' position).
+        If the cigar string has "n" number before variable "S",, then align starting read 
+        to be in position with the reference. If it is a reverse complimented strand, then check for 
+        16 in bitwise flag and check position from other end.```
+        Return corrected alignment position
+        So if the input for the function was 2S12M, 100, you would get the true alignment position of 102
+        and 102
+        Example Input: 2S12M, 100
+        Example Output: 102
+
+Identify Unique Molecular Indices in the reads by utilizing the STL96 file:
+-This will be dependent on the QNAME in the Column 1 header 
+    -So if the header is from NS500451:154:HWKTMBGXX:1:11101:15364:1139:GAACAGGT 
+      you will expect to get GAACAGGT
+
+    def UMI_finder(seqeunced read):
+    ``` Go into the STL96 file and iterate through all of the existing UMI identifiers and store them in
+        a dictionary (as mentioned above). Take the values of UMI's and compare them to the parsed UMI's in
+        the SAM file header. This will be an important step in error correcting the files. If UMI's match 
+        than keep the read, if not then discard read. ```
+        True UMI identifier to look for: GAACAGGT
+
+
+Look at alignment to chromosome, position, strandedness to discard reads:
+-This is part of the code will look for exact mapping of potential duplicates 
+
+    ``` Parse through the SAM files to find the exact chromosome alignment, position alignment.
+        If the three argument match to the sequenced read, then store the read. If the one or two or 
+        all of the arguments are not retained, then discard the read. Once each chromosome is parsed 
+        through once, then reset the dictionary to 0 and move on to the next logically occuring chromosome.
+        This should avoid parsing through the same read more than once and should save on computational heaviness```
+        Return: Matched Files
+
+        Ex:
+
+        If: read1    16    chr1    1    255    50M    *    0    0    ATTTAAAAATTAATTTAATGCTTGGCTAAATCTTAATTACATATATAATT 
+        matches to alignment to chromosome, position, strandedness  then store the reads
+        else discard duplicates
+
+
+
+Close all files
+
+
+Run Usage:
+
+Load in and open all files
+
+Set Dictionaries 
+
+Identify unique UMIS (UMI_finder)
+
+Determine soft clopping regions and find correct starting position (def_soft_clip_checker)
+
+Utilize main code to check for dupliicates regarding alignment to chromosome, position, strandedness
+
+close all files 
+
+Load output into IGV to visualize deduper result
+
+Additional Considerations:
+
+Add argparse features for the input files, making the code more utilitarian
+
+Make sure each file is being read one at line at a time
+
+Utilize split function to parse through strings in header of SAM files
+
+When parsing through file, make sure to store position, chromosome, and strandedness in the 
+previously designated dictionaries 
+
+Track chromosome position when looking for location based alignment so no one position is 
+looked through multiple times. 
