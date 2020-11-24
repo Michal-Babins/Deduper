@@ -22,6 +22,7 @@ input_file = args.input
 known_umi_file = args.umi
 paired_end = args.paired
 
+#File does not take paired end reads
 if paired_end == "Paired" or paired_end == "paired":
     print("Paired-End feature not included in package, exiting")
     exit()
